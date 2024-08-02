@@ -1,6 +1,6 @@
-## Entitlement access api
+Examples of using the Common Fate API: 
 
-Examples of using the Common Fate API.
+## Entitlement access API
 
 To run this locally, follow the instructions below:
 
