@@ -159,6 +159,9 @@ func (r *TestRunner) RunGroupMembershipTest(ctx context.Context, test GroupTest)
 		fmt.Printf("[WARN] error when finding user for email %s, ignoring because is-member is false: %s\n", test.User, err.Error())
 		return nil
 	}
+	if err != nil {
+		return err
+	}
 
 	groupMemberships, err := grab.AllPages(ctx, func(ctx context.Context, nextToken *string) ([]*directoryv1alpha1.UserGroupMembership, *string, error) {
 		res, err := r.DirectoryClient.QueryGroupsForUser(ctx, connect.NewRequest(&directoryv1alpha1.QueryGroupsForUserRequest{
