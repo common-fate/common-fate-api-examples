@@ -1,0 +1,5 @@
+access-tests:
+  - user: chris@commonfate.io
+    target: development-aws-account
+    role: AWSReadOnlyAccess
+    expected-result: auto-approved
