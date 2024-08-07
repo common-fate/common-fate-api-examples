@@ -71,6 +71,9 @@ func main() {
 		}
 		return res.Msg.Users, nil, nil
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	user, err := findUserWithEmail(users, *userPtr)
 	if err != nil {
