@@ -84,7 +84,7 @@ func main() {
 
 	fmt.Printf("retrieved %v users\n", len(users))
 
-	fmt.Println("\n-------------- ACCESS TESTS --------------")
+	fmt.Println("\n\n-------------- ACCESS TESTS --------------")
 	fmt.Printf("running %v access tests...\n", len(tests.AccessTests))
 
 	accessClient := access.NewFromConfig(cfg)
@@ -107,7 +107,7 @@ func main() {
 		}
 	}
 
-	fmt.Println("\n-------------- GROUP MEMBERSHIP TESTS --------------")
+	fmt.Println("\n\n-------------- GROUP MEMBERSHIP TESTS --------------")
 	fmt.Printf("running %v group membership tests...\n", len(tests.GroupTests))
 
 	var failedMembershipTests int
@@ -129,10 +129,10 @@ func main() {
 	}
 
 	if failedAccessTests > 0 {
-		fmt.Printf("\n%v Access Tests failed\n", failedAccessTests)
+		fmt.Printf("\n\n%v Access Tests failed\n", failedAccessTests)
 		os.Exit(1)
 	} else {
-		fmt.Println("\nAll Access Tests passed")
+		fmt.Println("\n\nAll Access Tests passed")
 	}
 
 	if failedMembershipTests > 0 {
