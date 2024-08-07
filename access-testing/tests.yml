@@ -3,3 +3,13 @@ access-tests:
     target: development-aws-account
     role: AWSReadOnlyAccess
     expected-result: auto-approved
+
+  - user: chris@commonfate.io
+    target: production-aws-account
+    role: AWSReadOnlyAccess
+    expected-result: requires-approval
+
+  - user: chris@commonfate.io
+    target: very-sensitive-aws-account
+    role: AWSReadOnlyAccess
+    expected-result: no-access
