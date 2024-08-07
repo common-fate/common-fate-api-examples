@@ -14,6 +14,7 @@ import (
 	accessv1alpha1 "github.com/common-fate/sdk/gen/commonfate/access/v1alpha1"
 	"github.com/common-fate/sdk/gen/commonfate/access/v1alpha1/accessv1alpha1connect"
 	directoryv1alpha1 "github.com/common-fate/sdk/gen/commonfate/control/directory/v1alpha1"
+	"github.com/common-fate/sdk/gen/commonfate/control/directory/v1alpha1/directoryv1alpha1connect"
 	entityv1alpha1 "github.com/common-fate/sdk/gen/commonfate/entity/v1alpha1"
 	"github.com/common-fate/sdk/service/access"
 	"github.com/common-fate/sdk/service/control/directory"
@@ -83,39 +84,112 @@ func main() {
 
 	fmt.Printf("retrieved %v users\n", len(users))
 
-	fmt.Println("\n-------------- ACCESS TESTS --------------")
+	fmt.Println("\n\n-------------- ACCESS TESTS --------------")
 	fmt.Printf("running %v access tests...\n", len(tests.AccessTests))
 
 	accessClient := access.NewFromConfig(cfg)
 
 	runner := TestRunner{
-		AccessClient: accessClient,
-		Users:        users,
+		AccessClient:    accessClient,
+		DirectoryClient: directoryClient,
+		Users:           users,
 	}
 
-	var failedTests int
+	var failedAccessTests int
 
 	for _, test := range tests.AccessTests {
 		err = runner.RunAccessTest(ctx, test)
 		if err != nil {
 			fmt.Printf("[FAIL] %s %s to %s with role %s: %s\n", test.User, test.ExpectedResult, test.Target, test.Role, err.Error())
-			failedTests++
+			failedAccessTests++
 		} else {
 			fmt.Printf("[PASS] %s %s to %s with role %s\n", test.User, test.ExpectedResult, test.Target, test.Role)
 		}
 	}
 
-	if failedTests > 0 {
-		fmt.Printf("\n%v Access Tests failed\n", failedTests)
-		os.Exit(1)
+	fmt.Println("\n\n-------------- GROUP MEMBERSHIP TESTS --------------")
+	fmt.Printf("running %v group membership tests...\n", len(tests.GroupTests))
+
+	var failedMembershipTests int
+
+	for _, test := range tests.GroupTests {
+		memberText := "is not member of"
+
+		if test.IsMember {
+			memberText = "is member of"
+		}
+
+		err = runner.RunGroupMembershipTest(ctx, test)
+		if err != nil {
+			fmt.Printf("[FAIL] %s %s %s: %s\n", test.User, memberText, test.Group, err.Error())
+			failedMembershipTests++
+		} else {
+			fmt.Printf("[PASS] %s %s %s\n", test.User, memberText, test.Group)
+		}
 	}
 
-	fmt.Println("\nAll Access Tests passed")
+	if failedAccessTests > 0 {
+		fmt.Printf("\n\n%v Access Tests failed\n", failedAccessTests)
+		os.Exit(1)
+	} else {
+		fmt.Println("\n\nAll Access Tests passed")
+	}
+
+	if failedMembershipTests > 0 {
+		fmt.Printf("\n%v Group Membership Tests failed\n", failedMembershipTests)
+	} else {
+		fmt.Println("\nAll Group Membership Tests passed")
+	}
+
+	if failedAccessTests > 0 || failedMembershipTests > 0 {
+		os.Exit(1)
+	}
 }
 
 type TestRunner struct {
-	AccessClient accessv1alpha1connect.AccessServiceClient
-	Users        []*directoryv1alpha1.User
+	AccessClient    accessv1alpha1connect.AccessServiceClient
+	DirectoryClient directoryv1alpha1connect.DirectoryServiceClient
+	Users           []*directoryv1alpha1.User
+}
+
+func (r *TestRunner) RunGroupMembershipTest(ctx context.Context, test GroupTest) error {
+	user, err := findUserWithEmail(r.Users, test.User)
+	if err != nil && !test.IsMember {
+		// don't fail if no-access and the user doesn't exist
+		fmt.Printf("[WARN] error when finding user for email %s, ignoring because is-member is false: %s\n", test.User, err.Error())
+		return nil
+	}
+
+	groupMemberships, err := grab.AllPages(ctx, func(ctx context.Context, nextToken *string) ([]*directoryv1alpha1.UserGroupMembership, *string, error) {
+		res, err := r.DirectoryClient.QueryGroupsForUser(ctx, connect.NewRequest(&directoryv1alpha1.QueryGroupsForUserRequest{
+			UserId:    user.Id,
+			PageToken: grab.Value(nextToken),
+		}))
+		if err != nil {
+			return nil, nil, err
+		}
+		if res.Msg.NextPageToken != "" {
+			return res.Msg.Memberships, &res.Msg.NextPageToken, nil
+		}
+		return res.Msg.Memberships, nil, nil
+	})
+
+	var isMember bool
+	for _, m := range groupMemberships {
+		if m.Group.Id == test.Group {
+			isMember = true
+			break
+		}
+	}
+
+	if test.IsMember && !isMember {
+		return errors.New("user is not member of group")
+	}
+	if !test.IsMember && isMember {
+		return errors.New("user is member of group")
+	}
+
+	return nil
 }
 
 func (r *TestRunner) RunAccessTest(ctx context.Context, test AccessTest) error {
@@ -124,6 +198,12 @@ func (r *TestRunner) RunAccessTest(ctx context.Context, test AccessTest) error {
 	}
 
 	user, err := findUserWithEmail(r.Users, test.User)
+	if err != nil && test.ExpectedResult == "no-access" {
+		// don't fail if no-access and the user doesn't exist
+		fmt.Printf("[WARN] error when finding user for email %s, ignoring because expected-result is no-access: %s\n", test.User, err.Error())
+		return nil
+	}
+
 	if err != nil {
 		return err
 	}
@@ -196,7 +276,7 @@ func findUserWithEmail(users []*directoryv1alpha1.User, email string) (*director
 
 type testFile struct {
 	AccessTests []AccessTest `yaml:"access-tests"`
-	GroupTests  []AccessTest `yaml:"group-tests"`
+	GroupTests  []GroupTest  `yaml:"group-tests"`
 }
 
 type AccessTest struct {
@@ -206,9 +286,8 @@ type AccessTest struct {
 	ExpectedResult string `yaml:"expected-result"`
 }
 
-type GroupTests struct {
+type GroupTest struct {
 	User     string `yaml:"user"`
-	Account  string `yaml:"account"`
-	Role     string `yaml:"role"`
+	Group    string `yaml:"group"`
 	IsMember bool   `yaml:"is-member"`
 }
