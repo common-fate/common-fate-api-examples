@@ -7,23 +7,18 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"time"
 
 	"connectrpc.com/connect"
 	"github.com/common-fate/grab"
 	"github.com/common-fate/sdk/config"
-	accessv1alpha1 "github.com/common-fate/sdk/gen/commonfate/access/v1alpha1"
 	directoryv1alpha1 "github.com/common-fate/sdk/gen/commonfate/control/directory/v1alpha1"
-	entityv1alpha1 "github.com/common-fate/sdk/gen/commonfate/entity/v1alpha1"
-	"github.com/common-fate/sdk/service/access"
 	"github.com/common-fate/sdk/service/control/directory"
 
 	"github.com/joho/godotenv"
 )
 
-var accountPtr = flag.String("account", "", "The AWS account to test access to")
-var rolePtr = flag.String("role", "", "The role to test access to")
-var userPtr = flag.String("user", "", "Email of the user to test access for")
+var groupIDPtr = flag.String("group-id", "", "The Group ID to test membership of")
+var userPtr = flag.String("user", "", "Email of the user to test group membership of")
 
 func main() {
 	err := godotenv.Load()
@@ -33,13 +28,8 @@ func main() {
 
 	flag.Parse()
 
-	if *rolePtr == "" {
-		err := errors.New("-role is required")
-		log.Fatal(err)
-	}
-
-	if *accountPtr == "" {
-		err := errors.New("-account is required")
+	if *groupIDPtr == "" {
+		err := errors.New("-group-id is required")
 		log.Fatal(err)
 	}
 
@@ -67,10 +57,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	directoryClient := directory.NewFromConfig(cfg)
+	client := directory.NewFromConfig(cfg)
 
 	users, err := grab.AllPages(ctx, func(ctx context.Context, nextToken *string) ([]*directoryv1alpha1.User, *string, error) {
-		res, err := directoryClient.QueryUsers(ctx, connect.NewRequest(&directoryv1alpha1.QueryUsersRequest{
+		res, err := client.QueryUsers(ctx, connect.NewRequest(&directoryv1alpha1.QueryUsersRequest{
 			PageToken: grab.Value(nextToken),
 		}))
 		if err != nil {
@@ -90,37 +80,29 @@ func main() {
 		log.Fatal(err)
 	}
 
-	client := access.NewFromConfig(cfg)
+	groupMemberships, err := grab.AllPages(ctx, func(ctx context.Context, nextToken *string) ([]*directoryv1alpha1.UserGroupMembership, *string, error) {
+		res, err := client.QueryGroupsForUser(ctx, connect.NewRequest(&directoryv1alpha1.QueryGroupsForUserRequest{
+			UserId:    user.Id,
+			PageToken: grab.Value(nextToken),
+		}))
+		if err != nil {
+			return nil, nil, err
+		}
+		if res.Msg.NextPageToken != "" {
+			return res.Msg.Memberships, &res.Msg.NextPageToken, nil
+		}
+		return res.Msg.Memberships, nil, nil
+	})
 
-	now := time.Now()
-
-	result, err := client.DebugEntitlementAccess(ctx, connect.NewRequest(&accessv1alpha1.DebugEntitlementAccessRequest{
-		Principal: &accessv1alpha1.Specifier{
-			Specify: &accessv1alpha1.Specifier_Eid{
-				Eid: &entityv1alpha1.EID{
-					Type: "CF::User",
-					Id:   user.Id,
-				},
-			},
-		},
-		Target: &accessv1alpha1.Specifier{
-			Specify: &accessv1alpha1.Specifier_Lookup{
-				Lookup: *accountPtr,
-			},
-		},
-		Role: &accessv1alpha1.Specifier{
-			Specify: &accessv1alpha1.Specifier_Lookup{
-				Lookup: *rolePtr,
-			},
-		},
-	}))
-	if err != nil {
-		log.Fatal(err)
+	for _, m := range groupMemberships {
+		if m.Group.Id == *groupIDPtr {
+			fmt.Printf("user %s (email %s) is a member of group %s (%s)\n", user.Id, user.Email, m.Group.Id, m.Group.Name)
+			os.Exit(0)
+		}
 	}
-	fmt.Printf("Can Request: %v\n", result.Msg.CanRequest)
-	fmt.Printf("Is Auto Approved: %v\n", result.Msg.AutoApproved)
 
-	fmt.Printf("Took: %v\n", time.Since(now))
+	// if we get here, the user is not a member of the group.
+	log.Fatalf("user %s (email %s) is not a member of group %s\n", user.Id, user.Email, *groupIDPtr)
 }
 
 func findUserWithEmail(users []*directoryv1alpha1.User, email string) (*directoryv1alpha1.User, error) {

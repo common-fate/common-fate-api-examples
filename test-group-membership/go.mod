@@ -1,4 +1,4 @@
-module go.commonfate.io/api-examples/entitlement-access-api
+module go.commonfate.io/api-examples/test-group-membership
 
 go 1.22.1
 
