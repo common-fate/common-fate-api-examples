@@ -1,3 +1,8 @@
+group-tests:
+  - user: chris@commonfate.io
+    group: 2df6c5c4-0e09-477a-b796-9ad9bd756d83
+    is-member: true
+
 access-tests:
   - user: chris@commonfate.io
     target: development-aws-account
